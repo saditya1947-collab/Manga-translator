@@ -2,7 +2,7 @@
 // 🔧 API CONFIGURATION
 // ============================================================
 
-const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space/api/predict/';
+const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 5000; // 5 seconds
 
@@ -456,4 +456,5 @@ setInterval(async () => {
     }
 }, 1800000); // Every 30 minutes
 */
+
 
