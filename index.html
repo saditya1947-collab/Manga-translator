@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Manga Translator — Multi-Image</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+
+<div id="mainContainer">
+
+<h2>📖 Manga Translator</h2>
+<p class="subtitle">Transform Japanese manga into English instantly with AI</p>
+
+<!-- File Upload Section -->
+<div class="sectionBox">
+    <h3>📁 Upload Files</h3>
+    <input id="file" type="file" accept="image/*,.pdf" multiple />
+    <button id="processBtn" class="btn">🔄 Process & Translate</button>
+</div>
+
+<!-- nhentai URL Section -->
+<div class="sectionBox">
+    <h3>🔗 nhentai URL</h3>
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+        <input id="nhentaiUrl" type="text" placeholder="https://nhentai.net/g/123456/" style="flex: 1; min-width: 250px;" />
+        <input id="pageNumbers" type="text" placeholder="Pages: 1-5, all, 1,3,5" style="flex: 0.5; min-width: 150px;" />
+        <button id="processNhentaiBtn" class="btn">🚀 Translate</button>
+    </div>
+    <p style="margin: 12px 0 0 0; color: #888; font-size: 14px;">
+        💡 Examples: "all" (all pages), "1-10" (pages 1 to 10), "1,5,10" (specific pages)
+    </p>
+</div>
+
+<!-- Info Box -->
+<div class="info-box">
+    <strong>💡 Quick Tips</strong>
+    <ul>
+        <li>First translation might take 30-60s (loading models)</li>
+        <li>Subsequent translations are faster (~5-10s per page)</li>
+        <li>Click any result to view in full screen with zoom controls</li>
+        <li>Use mouse wheel over image to zoom, arrow keys to navigate</li>
+    </ul>
+</div>
+
+<div id="loadingBarContainer">
+    <div id="loadingBar">0%</div>
+</div>
+
+<div id="status"></div>
+
+<h3>📚 Results</h3>
+<div id="resultContainer"></div>
+
+</div>
+
+<!-- OVERLAY -->
+<div id="overlay" aria-hidden="true">
+    <button class="overlay-btn closeBtn" title="Close (Esc)">&times;</button>
+    <button class="overlay-btn prevBtn" title="Previous (←)">&#10094;</button>
+    <button class="overlay-btn nextBtn" title="Next (→)">&#10095;</button>
+    <div id="zoomIndicator">100%</div>
+    <div id="pageIndicator">Page 1/1</div>
+
+    <div id="overlayContent" role="dialog" aria-modal="true">
+        <div id="imageWrapper">
+            <img id="overlayImg" src="" alt="Manga page" />
+        </div>
+    </div>
+</div>
+
+<script src="main.js"></script>
+
+</body>
+</html>
