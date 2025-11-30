@@ -3,7 +3,7 @@
 // ============================================================
 
 // 🎯 Use your Cloudflare Worker URL instead of direct HuggingFace URL
-const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
+const API_BASE_URL = 'https://adityat4000u/manga-translator.hf.space';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 3000;
@@ -478,3 +478,4 @@ window.addEventListener('DOMContentLoaded', async () => {
         status.innerText = "⏳ Service may be sleeping. First request may take 60s.";
     }
 });
+
