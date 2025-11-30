@@ -1,12 +1,41 @@
 // ============================================================
-// 🔧 API CONFIGURATION - PASTE YOUR HUGGING FACE URL HERE
+// 🔧 API CONFIGURATION
 // ============================================================
 
 const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 5000; // 5 seconds
 
-// ⚠️ IMPORTANT: Replace the URL above with your actual Hugging Face Space URL
-// Example: 'https://your-username-manga-translator.hf.space'
-// No trailing slash!
+// ============================================================
+// ENHANCED FETCH WITH RETRY LOGIC (for cold starts)
+// ============================================================
+
+async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+            
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            return response;
+            
+        } catch (error) {
+            if (i === retries) {
+                throw new Error(`Failed after ${retries + 1} attempts: ${error.message}`);
+            }
+            
+            console.log(`⚠️ Attempt ${i + 1} failed, retrying in ${RETRY_DELAY/1000}s...`);
+            status.innerText = `⏳ Space is waking up... (Attempt ${i + 1}/${retries + 1})`;
+            
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+        }
+    }
+}
 
 // ============================================================
 // DOM ELEMENTS
@@ -168,7 +197,7 @@ overlayImg.addEventListener("dblclick", () => {
 });
 
 // ============================================================
-// PROCESS UPLOADED FILES
+// PROCESS UPLOADED FILES (WITH RETRY LOGIC)
 // ============================================================
 
 async function processFiles(files) {
@@ -186,15 +215,17 @@ async function processFiles(files) {
     status.style.display = "block";
     loadingBar.style.width = "0%";
     loadingBar.innerText = "0%";
-    status.innerText = "🔄 Processing your manga pages...";
+    status.innerText = "🔄 Starting translator... (this may take up to 60s if sleeping)";
 
     for (let i = 0; i < files.length; i++) {
         const form = new FormData();
         form.append("file", files[i]);
 
         try {
-            // 🔥 UPDATED: Now using API_BASE_URL variable
-            const res = await fetch(`${API_BASE_URL}/process`, {
+            status.innerText = `🔄 Processing image ${i + 1}/${files.length}...`;
+            
+            // Use fetchWithRetry for better cold start handling
+            const res = await fetchWithRetry(`${API_BASE_URL}/process`, {
                 method: "POST",
                 body: form
             });
@@ -240,6 +271,7 @@ async function processFiles(files) {
         } catch (e) {
             console.error(e);
             status.innerText = "❌ Request failed: " + e.message;
+            status.innerText += "\n💡 The Space might be sleeping. Try again in a moment.";
         }
     }
 
@@ -255,7 +287,7 @@ processBtn.onclick = () => {
 };
 
 // ============================================================
-// PROCESS NHENTAI URL WITH STREAMING
+// PROCESS NHENTAI URL WITH STREAMING (WITH RETRY LOGIC)
 // ============================================================
 
 processNhentaiBtn.onclick = async () => {
@@ -278,15 +310,15 @@ processNhentaiBtn.onclick = async () => {
     status.style.display = "block";
     loadingBar.style.width = "0%";
     loadingBar.innerText = "0%";
-    status.innerText = "🌐 Fetching gallery info from nhentai...";
+    status.innerText = "🌐 Waking up translator and fetching gallery... (may take 60s)";
     
     try {
         const formData = new FormData();
         formData.append("url", url);
         formData.append("page_numbers", pageNumbers);
         
-        // 🔥 UPDATED: Now using API_BASE_URL variable
-        const response = await fetch(`${API_BASE_URL}/process_nhentai_stream`, {
+        // Use fetchWithRetry for better cold start handling
+        const response = await fetchWithRetry(`${API_BASE_URL}/process_nhentai_stream`, {
             method: "POST",
             body: formData
         });
@@ -368,6 +400,7 @@ processNhentaiBtn.onclick = async () => {
     } catch (e) {
         console.error(e);
         status.innerText = "❌ Request failed: " + e.message;
+        status.innerText += "\n💡 The Space might be sleeping. Please try again.";
         loadingBarContainer.style.display = "none";
     } finally {
         isProcessing = false;
@@ -376,22 +409,50 @@ processNhentaiBtn.onclick = async () => {
 };
 
 // ============================================================
-// 🔍 API CONNECTION TEST (Run on page load)
+// 🔍 API CONNECTION TEST & KEEP-ALIVE PING
 // ============================================================
 
-// Test if API is accessible when page loads
+let isSpaceAwake = false;
+
+// Test connection on load
 window.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Manga Translator loaded');
     console.log('📡 API Base URL:', API_BASE_URL);
     
-    // Optional: Test API connection
+    // Test if Space is awake
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
         const testResponse = await fetch(`${API_BASE_URL}/`, {
-            method: 'HEAD'
+            method: 'HEAD',
+            signal: controller.signal
         });
-        console.log('✅ API connection successful!');
+        
+        clearTimeout(timeoutId);
+        
+        if (testResponse.ok) {
+            console.log('✅ Space is awake and ready!');
+            isSpaceAwake = true;
+        }
     } catch (error) {
-        console.warn('⚠️ Could not connect to API:', error.message);
-        console.warn('Make sure your Hugging Face Space is running!');
+        console.warn('⚠️ Space appears to be sleeping. First request may take 60s to wake up.');
+        isSpaceAwake = false;
     }
 });
+
+// Optional: Keep Space awake by ping every 30 minutes
+// Uncomment this if you want to keep it awake during active sessions
+/*
+setInterval(async () => {
+    if (document.visibilityState === 'visible' && !isProcessing) {
+        try {
+            await fetch(`${API_BASE_URL}/`, { method: 'HEAD' });
+            console.log('🔄 Pinged Space to keep it awake');
+            isSpaceAwake = true;
+        } catch (e) {
+            isSpaceAwake = false;
+        }
+    }
+}, 1800000); // Every 30 minutes
+*/
