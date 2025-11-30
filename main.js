@@ -1,3 +1,17 @@
+// ============================================================
+// 🔧 API CONFIGURATION - PASTE YOUR HUGGING FACE URL HERE
+// ============================================================
+
+const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
+
+// ⚠️ IMPORTANT: Replace the URL above with your actual Hugging Face Space URL
+// Example: 'https://your-username-manga-translator.hf.space'
+// No trailing slash!
+
+// ============================================================
+// DOM ELEMENTS
+// ============================================================
+
 const fileInput = document.getElementById("file");
 const processBtn = document.getElementById("processBtn");
 const nhentaiUrlInput = document.getElementById("nhentaiUrl");
@@ -26,7 +40,10 @@ let isOverImage = false;
 let isProcessing = false;
 let zoomTimeout = null;
 
-// Helper functions
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
 function showZoomIndicator() {
     zoomIndicator.classList.add('visible');
     clearTimeout(zoomTimeout);
@@ -56,7 +73,10 @@ function updateZoom() {
     }, 10);
 }
 
-// Overlay functions
+// ============================================================
+// OVERLAY FUNCTIONS
+// ============================================================
+
 function openOverlay(index) {
     currentIndex = index;
     overlayImg.src = overlayImages[currentIndex].src;
@@ -147,7 +167,10 @@ overlayImg.addEventListener("dblclick", () => {
     updateZoom();
 });
 
-// Process uploaded files
+// ============================================================
+// PROCESS UPLOADED FILES
+// ============================================================
+
 async function processFiles(files) {
     if (isProcessing) {
         alert("⏳ Already processing! Please wait...");
@@ -170,7 +193,8 @@ async function processFiles(files) {
         form.append("file", files[i]);
 
         try {
-            const res = await fetch("http://localhost:8000/process", {
+            // 🔥 UPDATED: Now using API_BASE_URL variable
+            const res = await fetch(`${API_BASE_URL}/process`, {
                 method: "POST",
                 body: form
             });
@@ -230,7 +254,10 @@ processBtn.onclick = () => {
     processFiles(files);
 };
 
-// Process nhentai URL with streaming
+// ============================================================
+// PROCESS NHENTAI URL WITH STREAMING
+// ============================================================
+
 processNhentaiBtn.onclick = async () => {
     if (isProcessing) {
         alert("⏳ Already processing! Please wait...");
@@ -258,7 +285,8 @@ processNhentaiBtn.onclick = async () => {
         formData.append("url", url);
         formData.append("page_numbers", pageNumbers);
         
-        const response = await fetch("http://localhost:8000/process_nhentai_stream", {
+        // 🔥 UPDATED: Now using API_BASE_URL variable
+        const response = await fetch(`${API_BASE_URL}/process_nhentai_stream`, {
             method: "POST",
             body: formData
         });
@@ -346,3 +374,24 @@ processNhentaiBtn.onclick = async () => {
         processNhentaiBtn.disabled = false;
     }
 };
+
+// ============================================================
+// 🔍 API CONNECTION TEST (Run on page load)
+// ============================================================
+
+// Test if API is accessible when page loads
+window.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 Manga Translator loaded');
+    console.log('📡 API Base URL:', API_BASE_URL);
+    
+    // Optional: Test API connection
+    try {
+        const testResponse = await fetch(`${API_BASE_URL}/`, {
+            method: 'HEAD'
+        });
+        console.log('✅ API connection successful!');
+    } catch (error) {
+        console.warn('⚠️ Could not connect to API:', error.message);
+        console.warn('Make sure your Hugging Face Space is running!');
+    }
+});
