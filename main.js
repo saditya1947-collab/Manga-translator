@@ -3,7 +3,7 @@
 // ============================================================
 
 // 🎯 Use your Cloudflare Worker URL instead of direct HuggingFace URL
-const API_BASE_URL = 'https://adityat4000u/manga-translator.hf.space';
+const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 3000;
@@ -340,7 +340,7 @@ processNhentaiBtn.onclick = async () => {
         formData.append("url", url);
         formData.append("page_numbers", pageNumbers);
         
-        const response = await fetchWithRetry(`${API_BASE_URL}/process_nhentai_stream`, {
+        const response = await fetchWithRetry(`${API_BASE_URL}/api/process_nhentai_stream`, {
             method: "POST",
             body: formData
         });
@@ -478,4 +478,5 @@ window.addEventListener('DOMContentLoaded', async () => {
         status.innerText = "⏳ Service may be sleeping. First request may take 60s.";
     }
 });
+
 
