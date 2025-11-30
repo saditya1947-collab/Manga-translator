@@ -252,7 +252,7 @@ overlay.addEventListener("wheel", (e) => {
         e.stopPropagation();
         const zoomSpeed = 0.1;
         zoom += (e.deltaY < 0 ? zoomSpeed : -zoomSpeed);
-        zoom = Math.min(Math.max(zoom, 0.5), 2.0);
+        zoom = Math.min(Math.max(zoom, 0.1), 1.0);
         updateZoom();
     }
 }, { passive: false });
@@ -610,4 +610,5 @@ window.addEventListener('DOMContentLoaded', async () => {
         updateStatus("⏳ Service may be sleeping. First request may take 60 seconds to wake up.", 'warning');
     }
 });
+
 
