@@ -2,20 +2,20 @@
 // 🔧 API CONFIGURATION
 // ============================================================
 
-const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space/process';
+const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
 
-const MAX_RETRIES = 2;
-const RETRY_DELAY = 5000; // 5 seconds
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 3000; // 3 seconds between retries
 
 // ============================================================
-// ENHANCED FETCH WITH RETRY LOGIC (for cold starts)
+// ENHANCED FETCH WITH RETRY LOGIC
 // ============================================================
 
 async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
     for (let i = 0; i <= retries; i++) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+            const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 min timeout
             
             const response = await fetch(url, {
                 ...options,
@@ -23,17 +23,36 @@ async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
             });
             
             clearTimeout(timeoutId);
+            
+            // If response is OK or error is not 503, return it
+            if (response.ok || (response.status !== 503 && i === retries)) {
+                return response;
+            }
+            
+            // If 503 and not last retry, wait and retry
+            if (response.status === 503 && i < retries) {
+                console.log(`⚠️ Service unavailable (503), retrying in ${RETRY_DELAY/1000}s... (Attempt ${i + 1}/${retries + 1})`);
+                status.innerText = `⏳ Space is waking up... Please wait (Attempt ${i + 2}/${retries + 1})`;
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (i + 1))); // Exponential backoff
+                continue;
+            }
+            
             return response;
             
         } catch (error) {
-            if (i === retries) {
+            if (error.name === 'AbortError') {
+                console.error('Request timeout');
+                if (i === retries) {
+                    throw new Error('Request timed out after 3 minutes');
+                }
+            } else if (i === retries) {
                 throw new Error(`Failed after ${retries + 1} attempts: ${error.message}`);
             }
             
             console.log(`⚠️ Attempt ${i + 1} failed, retrying in ${RETRY_DELAY/1000}s...`);
-            status.innerText = `⏳ Space is waking up... (Attempt ${i + 1}/${retries + 1})`;
+            status.innerText = `⏳ Connection failed, retrying... (Attempt ${i + 1}/${retries + 1})`;
             
-            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (i + 1)));
         }
     }
 }
@@ -153,11 +172,9 @@ function showNext() {
 prevBtn.onclick = showPrev;
 nextBtn.onclick = showNext;
 
-// Mouse tracking
 overlayImg.addEventListener("mouseenter", () => { isOverImage = true; });
 overlayImg.addEventListener("mouseleave", () => { isOverImage = false; });
 
-// Zoom with mouse wheel
 overlay.addEventListener("wheel", (e) => {
     if (isOverImage) {
         e.preventDefault();
@@ -169,7 +186,6 @@ overlay.addEventListener("wheel", (e) => {
     }
 }, { passive: false });
 
-// Keyboard controls
 document.addEventListener("keydown", (e) => {
     if (overlay.style.display !== "block") return;
     
@@ -198,7 +214,7 @@ overlayImg.addEventListener("dblclick", () => {
 });
 
 // ============================================================
-// PROCESS UPLOADED FILES (WITH RETRY LOGIC)
+// PROCESS UPLOADED FILES
 // ============================================================
 
 async function processFiles(files) {
@@ -216,24 +232,33 @@ async function processFiles(files) {
     status.style.display = "block";
     loadingBar.style.width = "0%";
     loadingBar.innerText = "0%";
-    status.innerText = "🔄 Starting translator... (this may take up to 60s if sleeping)";
+    status.innerText = "🔄 Starting translator...";
 
     for (let i = 0; i < files.length; i++) {
         const form = new FormData();
         form.append("file", files[i]);
 
         try {
-            status.innerText = `🔄 Processing image ${i + 1}/${files.length}...`;
+            status.innerText = `🔄 Processing image ${i + 1}/${files.length}... (This may take 30-60s if space is sleeping)`;
             
-            // Use fetchWithRetry for better cold start handling
             const res = await fetchWithRetry(`${API_BASE_URL}/process`, {
                 method: "POST",
                 body: form
             });
 
             if (!res.ok) {
-                const err = await res.json();
-                status.innerText = "❌ Server error: " + (err.detail || res.statusText);
+                let errorMsg = `Server error: ${res.status}`;
+                try {
+                    const err = await res.json();
+                    errorMsg = err.detail || errorMsg;
+                } catch (e) {
+                    errorMsg = res.statusText || errorMsg;
+                }
+                status.innerText = `❌ ${errorMsg}`;
+                
+                if (res.status === 503) {
+                    status.innerText += "\n⏳ Models are loading, please wait 30 seconds and try again.";
+                }
                 continue;
             }
 
@@ -271,8 +296,8 @@ async function processFiles(files) {
 
         } catch (e) {
             console.error(e);
-            status.innerText = "❌ Request failed: " + e.message;
-            status.innerText += "\n💡 The Space might be sleeping. Try again in a moment.";
+            status.innerText = `❌ Request failed: ${e.message}`;
+            status.innerText += "\n💡 The space might be sleeping. Please wait a moment and try again.";
         }
     }
 
@@ -288,7 +313,7 @@ processBtn.onclick = () => {
 };
 
 // ============================================================
-// PROCESS NHENTAI URL WITH STREAMING (WITH RETRY LOGIC)
+// PROCESS NHENTAI URL WITH STREAMING
 // ============================================================
 
 processNhentaiBtn.onclick = async () => {
@@ -311,21 +336,32 @@ processNhentaiBtn.onclick = async () => {
     status.style.display = "block";
     loadingBar.style.width = "0%";
     loadingBar.innerText = "0%";
-    status.innerText = "🌐 Waking up translator and fetching gallery... (may take 60s)";
+    status.innerText = "🌐 Waking up translator and fetching gallery...";
     
     try {
         const formData = new FormData();
         formData.append("url", url);
         formData.append("page_numbers", pageNumbers);
         
-        // Use fetchWithRetry for better cold start handling
         const response = await fetchWithRetry(`${API_BASE_URL}/process_nhentai_stream`, {
             method: "POST",
             body: formData
         });
         
         if (!response.ok) {
-            status.innerText = "❌ Error: " + response.statusText;
+            let errorMsg = `Error: ${response.status}`;
+            try {
+                const err = await response.json();
+                errorMsg = err.detail || errorMsg;
+            } catch (e) {
+                errorMsg = response.statusText || errorMsg;
+            }
+            status.innerText = `❌ ${errorMsg}`;
+            
+            if (response.status === 503) {
+                status.innerText += "\n⏳ Models are loading, please wait 30 seconds and try again.";
+            }
+            
             loadingBarContainer.style.display = "none";
             return;
         }
@@ -387,6 +423,7 @@ processNhentaiBtn.onclick = async () => {
                         
                     } else if (data.type === "error") {
                         console.error(`Error on page ${data.page}:`, data.message);
+                        status.innerText = `⚠️ Error on page ${data.page}: ${data.message}`;
                         
                     } else if (data.type === "complete") {
                         status.innerText = `✅ Done! Translated ${totalToProcess} pages from "${galleryTitle}"`;
@@ -400,8 +437,8 @@ processNhentaiBtn.onclick = async () => {
         
     } catch (e) {
         console.error(e);
-        status.innerText = "❌ Request failed: " + e.message;
-        status.innerText += "\n💡 The Space might be sleeping. Please try again.";
+        status.innerText = `❌ Request failed: ${e.message}`;
+        status.innerText += "\n💡 The space might be sleeping or there's a network issue. Please try again.";
         loadingBarContainer.style.display = "none";
     } finally {
         isProcessing = false;
@@ -410,54 +447,64 @@ processNhentaiBtn.onclick = async () => {
 };
 
 // ============================================================
-// 🔍 API CONNECTION TEST & KEEP-ALIVE PING
+// INITIAL CONNECTION CHECK
 // ============================================================
 
 let isSpaceAwake = false;
 
-// Test connection on load
 window.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Manga Translator loaded');
     console.log('📡 API Base URL:', API_BASE_URL);
     
-    // Test if Space is awake
+    // Test connection without blocking UI
+    status.innerText = "🔍 Checking service status...";
+    
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
         
         const testResponse = await fetch(`${API_BASE_URL}/`, {
-            method: 'HEAD',
+            method: 'GET',
             signal: controller.signal
         });
         
         clearTimeout(timeoutId);
         
         if (testResponse.ok) {
-            console.log('✅ Space is awake and ready!');
-            isSpaceAwake = true;
+            const data = await testResponse.json();
+            console.log('✅ Service response:', data);
+            
+            if (data.models_loaded) {
+                status.innerText = "✅ Service is ready! Upload images to start translating.";
+                isSpaceAwake = true;
+            } else {
+                status.innerText = "⏳ Models are loading... This may take 30-60 seconds.";
+                // Retry after 30 seconds
+                setTimeout(() => {
+                    window.location.reload();
+                }, 30000);
+            }
+        } else {
+            status.innerText = "⚠️ Service is starting up. Please wait...";
         }
     } catch (error) {
-        console.warn('⚠️ Space appears to be sleeping. First request may take 60s to wake up.');
+        console.warn('⚠️ Space appears to be sleeping:', error);
+        status.innerText = "⏳ Space is sleeping. First request may take 60s to wake up.";
         isSpaceAwake = false;
     }
 });
 
-// Optional: Keep Space awake by ping every 30 minutes
-// Uncomment this if you want to keep it awake during active sessions
+// Keep-alive ping (optional - uncomment if needed)
 /*
 setInterval(async () => {
     if (document.visibilityState === 'visible' && !isProcessing) {
         try {
             await fetch(`${API_BASE_URL}/`, { method: 'HEAD' });
-            console.log('🔄 Pinged Space to keep it awake');
+            console.log('🔄 Pinged space to keep it awake');
             isSpaceAwake = true;
         } catch (e) {
             isSpaceAwake = false;
         }
     }
-}, 1800000); // Every 30 minutes
+}, 300000); // Every 5 minutes
 */
-
-
-
-
