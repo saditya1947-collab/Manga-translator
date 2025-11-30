@@ -89,7 +89,7 @@ const pageIndicator = document.getElementById("pageIndicator");
 // ============================================================
 let overlayImages = [];        // Array of all translated images
 let currentIndex = 0;          // Current image index in overlay
-let zoom = 1.5;               // Current zoom level
+let zoom = 1.0;               // Current zoom level
 let isOverImage = false;      // Mouse is over the image
 let isProcessing = false;     // Currently processing images
 let zoomTimeout = null;       // Timeout for hiding zoom indicator
@@ -250,7 +250,7 @@ overlay.addEventListener("wheel", (e) => {
     if (isOverImage) {
         e.preventDefault();
         e.stopPropagation();
-        const zoomSpeed = 0.1;
+        const zoomSpeed = 0.05;
         zoom += (e.deltaY < 0 ? zoomSpeed : -zoomSpeed);
         zoom = Math.min(Math.max(zoom, 0.1), 1.0);
         updateZoom();
@@ -610,5 +610,6 @@ window.addEventListener('DOMContentLoaded', async () => {
         updateStatus("⏳ Service may be sleeping. First request may take 60 seconds to wake up.", 'warning');
     }
 });
+
 
 
