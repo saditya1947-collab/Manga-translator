@@ -93,6 +93,8 @@ let zoom = 1.5;               // Current zoom level
 let isOverImage = false;      // Mouse is over the image
 let isProcessing = false;     // Currently processing images
 let zoomTimeout = null;       // Timeout for hiding zoom indicator
+let originalImageWidth = 0;
+let originalImageHeight = 0;
 
 // ============================================================
 // 📊 STATUS UPDATE HELPER
@@ -144,16 +146,23 @@ function updatePageIndicator() {
 
 // Apply zoom transformation to image
 function updateZoom() {
-    imageWrapper.style.transform = `scale(${zoom})`;
-    const padding = Math.max(60, 100 * zoom);
-    overlayContent.style.padding = `${padding}px 0`;
+    if (originalImageWidth === 0) return;
+
+    // 1. Calculate the new image dimensions based on zoom
+    const newImgWidth = originalImageWidth * zoom;
+    const newImgHeight = originalImageHeight * zoom;
+
+    // 2. Apply dimensions ONLY to the IMAGE
+    // The imageWrapper will automatically resize to fit the image PLUS the 100px CSS padding.
+    overlayImg.style.width = `${newImgWidth}px`;
+    overlayImg.style.height = `${newImgHeight}px`;
+
+    // 3. Reset imageWrapper to default flow (no need to set width/height explicitly anymore)
+    imageWrapper.style.width = `auto`; 
+    imageWrapper.style.height = `auto`; 
+
+    // 4. Update UI
     updateZoomIndicator();
-    
-    // Center the image vertically after zoom
-    setTimeout(() => {
-        const scrollY = (overlayContent.scrollHeight - overlayContent.clientHeight) / 2;
-        overlayContent.scrollTo({ top: scrollY, behavior: 'instant' });
-    }, 10);
 }
 
 // ============================================================
@@ -163,21 +172,42 @@ function updateZoom() {
 // Open overlay with specific image
 function openOverlay(index) {
     currentIndex = index;
+    zoom = 1.0;
+    
+    overlayImg.style.opacity = "0";
     overlayImg.src = overlayImages[currentIndex].src;
+    
     overlay.style.display = "block";
     overlay.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
     
-    zoom = 1.5;
     updatePageIndicator();
     
-    // Center image when loaded
     overlayImg.onload = () => {
+        originalImageWidth = overlayImg.naturalWidth;
+        originalImageHeight = overlayImg.naturalHeight;
+        
+        // Responsive initial fit:
+        // Use window.innerWidth/Height and subtract the CSS padding (2 * 100px = 200px)
+        const availableWidth = window.innerWidth - 100; // Assuming 50px left/right padding
+        const availableHeight = window.innerHeight - 200; // Assuming 100px top/bottom padding
+
+        // ... (The rest of your zoom/ratio calculation logic remains the same, 
+        // using availableWidth/Height for the initial fit calculation) ...
+
+        if (originalImageWidth > availableWidth || originalImageHeight > availableHeight) {
+            const widthRatio = availableWidth / originalImageWidth;
+            const heightRatio = availableHeight / originalImageHeight;
+            zoom = Math.min(widthRatio, heightRatio);
+        } else {
+            zoom = 1.0;
+        }
+
+        zoom = Math.max(zoom, 0.2);
+
         updateZoom();
-        setTimeout(() => {
-            const scrollY = (overlayContent.scrollHeight - overlayContent.clientHeight) / 2;
-            overlayContent.scrollTo({ top: scrollY, behavior: 'instant' });
-        }, 50);
+        
+        overlayImg.style.opacity = "1";
     };
 }
 
@@ -580,3 +610,4 @@ window.addEventListener('DOMContentLoaded', async () => {
         updateStatus("⏳ Service may be sleeping. First request may take 60 seconds to wake up.", 'warning');
     }
 });
+
