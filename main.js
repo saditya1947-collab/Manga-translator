@@ -8,7 +8,7 @@
 // 3. Render: 'https://your-app.onrender.com'
 // 4. Local testing: 'http://localhost:7860'
 
-const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
+const API_BASE_URL = process.env.API_BASE_URL;
 
 // Verify API URL is correct
 if (API_BASE_URL.includes('github.io')) {
@@ -587,3 +587,4 @@ window.addEventListener('DOMContentLoaded', async () => {
         updateStatus("⏳ Service may be sleeping. First request may take 60 seconds to wake up.", 'warning');
     }
 });
+
