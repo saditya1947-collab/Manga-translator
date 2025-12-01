@@ -1,34 +1,69 @@
 // ============================================================
 // 🔧 API CONFIGURATION
 // ============================================================
-// IMPORTANT: This must point to your BACKEND API, not GitHub Pages!
-// Options:
-// 1. HuggingFace Space: 'https://your-space.hf.space'
-// 2. Railway: 'https://your-app.railway.app'
-// 3. Render: 'https://your-app.onrender.com'
-// 4. Local testing: 'http://localhost:7860'
-
 const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
 
-// Verify API URL is correct
-if (API_BASE_URL.includes('github.io')) {
-    console.error('❌ ERROR: API_BASE_URL points to GitHub Pages! This will not work.');
-    console.error('GitHub Pages cannot run Python/FastAPI backends.');
-    console.error('Please deploy your backend to HuggingFace/Railway/Render and update API_BASE_URL');
-    alert('⚠️ Configuration Error: API endpoint is not set correctly. Check console for details.');
-}
-
-// Retry settings for handling Space wake-up and network issues
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 3000;
 
 // ============================================================
-// 🔄 SMART FETCH FUNCTION WITH AUTO-RETRY
+// 🔐 SESSION MANAGEMENT
+// ============================================================
+let sessionToken = null;
+let sessionInitialized = false;
+
+async function initSession() {
+    try {
+        updateStatus("🔐 Initializing secure session...", 'info');
+        
+        const res = await fetch(`${API_BASE_URL}/get-session`, {
+            method: 'GET'
+        });
+        
+        if (!res.ok) {
+            throw new Error(`Failed to get session: ${res.status}`);
+        }
+        
+        const data = await res.json();
+        sessionToken = data.token;
+        sessionInitialized = true;
+        
+        console.log('✅ Secure session initialized');
+        return true;
+    } catch (e) {
+        console.error('❌ Session initialization failed:', e);
+        updateStatus('❌ Failed to initialize session. Please refresh the page.', 'error');
+        return false;
+    }
+}
+
+async function refreshSessionIfNeeded() {
+    if (!sessionInitialized || !sessionToken) {
+        return await initSession();
+    }
+    return true;
+}
+
+// ============================================================
+// 🔄 SMART FETCH FUNCTION WITH AUTO-RETRY & SESSION
 // ============================================================
 async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
-    // Ensure we're not accidentally calling GitHub Pages
     if (url.includes('github.io')) {
         throw new Error('Cannot POST to GitHub Pages! Check API_BASE_URL configuration.');
+    }
+    
+    // Ensure session is initialized
+    if (!url.includes('/get-session')) {
+        const sessionReady = await refreshSessionIfNeeded();
+        if (!sessionReady) {
+            throw new Error('Session initialization failed');
+        }
+        
+        // Add session token to headers
+        options.headers = {
+            ...options.headers,
+            'Session-Token': sessionToken
+        };
     }
     
     console.log('🌐 Fetching:', url);
@@ -45,8 +80,22 @@ async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
             
             clearTimeout(timeoutId);
             
-            // Log response for debugging
             console.log(`📡 Response from ${url}:`, response.status, response.statusText);
+            
+            // Handle session expiration
+            if (response.status === 403) {
+                const errorData = await response.json().catch(() => ({}));
+                if (errorData.detail && errorData.detail.includes('session')) {
+                    console.log('🔄 Session expired, refreshing...');
+                    sessionInitialized = false;
+                    sessionToken = null;
+                    
+                    if (i < retries) {
+                        await initSession();
+                        continue;
+                    }
+                }
+            }
             
             if (response.ok || (response.status !== 503 && i === retries)) {
                 return response;
@@ -58,9 +107,13 @@ async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
                 continue;
             }
             
-            // Handle 405 error specifically
             if (response.status === 405) {
-                throw new Error(`405 Method Not Allowed. The endpoint ${url} doesn't accept this request method. Check your API configuration.`);
+                throw new Error(`405 Method Not Allowed. The endpoint ${url} doesn't accept this request method.`);
+            }
+            
+            if (response.status === 429) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || 'Rate limit exceeded. Please wait before trying again.');
             }
             
             return response;
@@ -287,6 +340,11 @@ async function processFiles(files) {
         return;
     }
     
+    if (!sessionInitialized) {
+        alert("❌ Session not initialized. Please refresh the page.");
+        return;
+    }
+    
     isProcessing = true;
     processBtn.disabled = true;
     
@@ -306,7 +364,6 @@ async function processFiles(files) {
         try {
             updateStatus(`📤 Uploading image ${i + 1}/${files.length}...`, 'info');
             
-            // Make sure we're calling the correct endpoint
             const endpoint = `${API_BASE_URL}/process`;
             console.log('📡 Calling endpoint:', endpoint);
             
@@ -328,9 +385,8 @@ async function processFiles(files) {
                 
                 if (res.status === 503) {
                     updateStatus("⏳ Service is starting, please wait 30s and try again.", 'warning');
-                } else if (res.status === 405) {
-                    updateStatus("❌ 405 Method Not Allowed - Check API configuration", 'error');
-                    console.error('The endpoint does not accept POST requests. Verify your backend is running correctly.');
+                } else if (res.status === 429) {
+                    updateStatus("⏳ Rate limit exceeded. Please wait a moment before trying again.", 'warning');
                 }
                 continue;
             }
@@ -399,6 +455,11 @@ processNhentaiBtn.onclick = async () => {
         return;
     }
     
+    if (!sessionInitialized) {
+        alert("❌ Session not initialized. Please refresh the page.");
+        return;
+    }
+    
     const url = nhentaiUrlInput.value.trim();
     const pageNumbers = pageNumbersInput.value.trim() || "all";
     
@@ -423,7 +484,6 @@ processNhentaiBtn.onclick = async () => {
         
         updateStatus("🌐 Connecting to nhentai...", 'info');
         
-        // Make sure we're calling the correct endpoint
         const endpoint = `${API_BASE_URL}/process_nhentai_stream`;
         console.log('📡 Calling endpoint:', endpoint);
         
@@ -445,9 +505,8 @@ processNhentaiBtn.onclick = async () => {
             
             if (response.status === 503) {
                 updateStatus("⏳ Service is starting, please wait 30s and try again.", 'warning');
-            } else if (response.status === 405) {
-                updateStatus("❌ 405 Method Not Allowed - Check API configuration", 'error');
-                console.error('The endpoint does not accept POST requests. Verify your backend is running correctly.');
+            } else if (response.status === 429) {
+                updateStatus("⏳ Rate limit exceeded. Please wait before trying again.", 'warning');
             }
             
             loadingBarContainer.style.display = "none";
@@ -539,53 +598,24 @@ processNhentaiBtn.onclick = async () => {
 };
 
 // ============================================================
-// 🏥 HEALTH CHECK ON PAGE LOAD
+// 🏥 INITIALIZATION ON PAGE LOAD
 // ============================================================
 window.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Manga Translator Frontend Loaded');
     console.log('📡 API Endpoint:', API_BASE_URL);
     
-    // Warn if configuration looks wrong
     if (API_BASE_URL.includes('github.io')) {
         console.error('❌ CRITICAL: API_BASE_URL is pointing to GitHub Pages!');
-        console.error('This will NOT work. GitHub Pages cannot run Python backends.');
-        updateStatus("❌ Configuration Error: API endpoint must point to a backend server (HuggingFace/Railway/Render)", 'error');
+        updateStatus("❌ Configuration Error: API endpoint must point to a backend server", 'error');
         return;
     }
     
-    updateStatus("🔍 Checking service status...", 'info');
+    // Initialize secure session
+    const success = await initSession();
     
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        
-        const testResponse = await fetch(`${API_BASE_URL}/health`, {
-            method: 'GET',
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (testResponse.ok) {
-            const data = await testResponse.json();
-            if (data.models_loaded) {
-                updateStatus("✅ Service is ready! Upload manga images to start translating.", 'success');
-                console.log('✅ Backend is online and models are loaded');
-            } else {
-                updateStatus("⏳ Models are loading... Please wait a moment.", 'warning');
-                console.log('⚠️ Backend is online but models are still loading');
-            }
-        } else if (testResponse.status === 404) {
-            updateStatus("✅ Service is ready! Upload manga images to start translating.", 'success');
-            console.log('✅ Backend is online (404 on /health is acceptable)');
-        } else {
-            updateStatus("⚠️ Service returned unexpected status. Try uploading an image to test.", 'warning');
-            console.warn('⚠️ Unexpected status:', testResponse.status);
-        }
-    } catch (error) {
-        console.warn('⚠️ Service check failed:', error.message);
-        updateStatus("⏳ Service may be sleeping. First request may take 60 seconds to wake up.", 'warning');
+    if (success) {
+        updateStatus("✅ Ready! Upload manga images to start translating.", 'success');
+    } else {
+        updateStatus("❌ Failed to connect. Please refresh the page or check if the service is running.", 'error');
     }
 });
-
-
