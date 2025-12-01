@@ -1,25 +1,43 @@
 // ============================================================
 // 🔧 API CONFIGURATION
 // ============================================================
-// This is your HuggingFace Space URL where the translation API runs
+// IMPORTANT: This must point to your BACKEND API, not GitHub Pages!
+// Options:
+// 1. HuggingFace Space: 'https://your-space.hf.space'
+// 2. Railway: 'https://your-app.railway.app'
+// 3. Render: 'https://your-app.onrender.com'
+// 4. Local testing: 'http://localhost:7860'
+
 const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
 
+// Verify API URL is correct
+if (API_BASE_URL.includes('github.io')) {
+    console.error('❌ ERROR: API_BASE_URL points to GitHub Pages! This will not work.');
+    console.error('GitHub Pages cannot run Python/FastAPI backends.');
+    console.error('Please deploy your backend to HuggingFace/Railway/Render and update API_BASE_URL');
+    alert('⚠️ Configuration Error: API endpoint is not set correctly. Check console for details.');
+}
+
 // Retry settings for handling Space wake-up and network issues
-const MAX_RETRIES = 3;           // Try up to 3 times if request fails
-const RETRY_DELAY = 3000;        // Wait 3 seconds between retries
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 3000;
 
 // ============================================================
 // 🔄 SMART FETCH FUNCTION WITH AUTO-RETRY
 // ============================================================
-// This function automatically retries failed requests and shows progress
 async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
+    // Ensure we're not accidentally calling GitHub Pages
+    if (url.includes('github.io')) {
+        throw new Error('Cannot POST to GitHub Pages! Check API_BASE_URL configuration.');
+    }
+    
+    console.log('🌐 Fetching:', url);
+    
     for (let i = 0; i <= retries; i++) {
         try {
-            // Create timeout controller to prevent hanging requests
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 min timeout
+            const timeoutId = setTimeout(() => controller.abort(), 180000);
             
-            // Make the actual request
             const response = await fetch(url, {
                 ...options,
                 signal: controller.signal
@@ -27,22 +45,27 @@ async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
             
             clearTimeout(timeoutId);
             
-            // If successful or this is our last retry, return the response
+            // Log response for debugging
+            console.log(`📡 Response from ${url}:`, response.status, response.statusText);
+            
             if (response.ok || (response.status !== 503 && i === retries)) {
                 return response;
             }
             
-            // If Space is sleeping (503 error), retry with longer delay
             if (response.status === 503 && i < retries) {
                 updateStatus(`⏳ Space is waking up... Please wait (Attempt ${i + 2}/${retries + 1})`, 'warning');
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (i + 1)));
                 continue;
             }
             
+            // Handle 405 error specifically
+            if (response.status === 405) {
+                throw new Error(`405 Method Not Allowed. The endpoint ${url} doesn't accept this request method. Check your API configuration.`);
+            }
+            
             return response;
             
         } catch (error) {
-            // Handle timeout errors
             if (error.name === 'AbortError') {
                 console.error('Request timeout');
                 if (i === retries) {
@@ -52,7 +75,6 @@ async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
                 throw new Error(`Failed after ${retries + 1} attempts: ${error.message}`);
             }
             
-            // Show retry message
             updateStatus(`⏳ Connection failed, retrying... (Attempt ${i + 1}/${retries + 1})`, 'warning');
             await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (i + 1)));
         }
@@ -62,7 +84,6 @@ async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
 // ============================================================
 // 📱 DOM ELEMENT REFERENCES
 // ============================================================
-// Get references to all HTML elements we'll interact with
 const fileInput = document.getElementById("file");
 const processBtn = document.getElementById("processBtn");
 const nhentaiUrlInput = document.getElementById("nhentaiUrl");
@@ -73,7 +94,6 @@ const resultContainer = document.getElementById("resultContainer");
 const loadingBarContainer = document.getElementById("loadingBarContainer");
 const loadingBar = document.getElementById("loadingBar");
 
-// Overlay viewer elements (for fullscreen image viewing)
 const overlay = document.getElementById("overlay");
 const overlayImg = document.getElementById("overlayImg");
 const overlayContent = document.getElementById("overlayContent");
@@ -87,24 +107,22 @@ const pageIndicator = document.getElementById("pageIndicator");
 // ============================================================
 // 🔢 GLOBAL STATE VARIABLES
 // ============================================================
-let overlayImages = [];        // Array of all translated images
-let currentIndex = 0;          // Current image index in overlay
-let zoom = 1.0;               // Current zoom level
-let isOverImage = false;      // Mouse is over the image
-let isProcessing = false;     // Currently processing images
-let zoomTimeout = null;       // Timeout for hiding zoom indicator
+let overlayImages = [];
+let currentIndex = 0;
+let zoom = 1.0;
+let isOverImage = false;
+let isProcessing = false;
+let zoomTimeout = null;
 let originalImageWidth = 0;
 let originalImageHeight = 0;
 
 // ============================================================
 // 📊 STATUS UPDATE HELPER
 // ============================================================
-// Updates the status message with optional styling
 function updateStatus(message, type = 'info') {
     status.innerText = message;
     status.style.display = "block";
     
-    // Apply color based on message type
     switch(type) {
         case 'success':
             status.style.color = '#28a745';
@@ -123,8 +141,6 @@ function updateStatus(message, type = 'info') {
 // ============================================================
 // 📏 ZOOM & UI HELPER FUNCTIONS
 // ============================================================
-
-// Show the zoom level indicator temporarily
 function showZoomIndicator() {
     zoomIndicator.classList.add('visible');
     clearTimeout(zoomTimeout);
@@ -133,43 +149,33 @@ function showZoomIndicator() {
     }, 2000);
 }
 
-// Update zoom indicator text
 function updateZoomIndicator() {
     zoomIndicator.textContent = Math.round(zoom * 100) + '%';
     showZoomIndicator();
 }
 
-// Update page indicator (e.g., "Page 1/5")
 function updatePageIndicator() {
     pageIndicator.textContent = `Page ${currentIndex + 1}/${overlayImages.length}`;
 }
 
-// Apply zoom transformation to image
 function updateZoom() {
     if (originalImageWidth === 0) return;
 
-    // 1. Calculate the new image dimensions based on zoom
     const newImgWidth = originalImageWidth * zoom;
     const newImgHeight = originalImageHeight * zoom;
 
-    // 2. Apply dimensions ONLY to the IMAGE
-    // The imageWrapper will automatically resize to fit the image PLUS the 100px CSS padding.
     overlayImg.style.width = `${newImgWidth}px`;
     overlayImg.style.height = `${newImgHeight}px`;
 
-    // 3. Reset imageWrapper to default flow (no need to set width/height explicitly anymore)
     imageWrapper.style.width = `auto`; 
     imageWrapper.style.height = `auto`; 
 
-    // 4. Update UI
     updateZoomIndicator();
 }
 
 // ============================================================
 // 🖼️ FULLSCREEN OVERLAY VIEWER
 // ============================================================
-
-// Open overlay with specific image
 function openOverlay(index) {
     currentIndex = index;
     zoom = 1.0;
@@ -187,13 +193,8 @@ function openOverlay(index) {
         originalImageWidth = overlayImg.naturalWidth;
         originalImageHeight = overlayImg.naturalHeight;
         
-        // Responsive initial fit:
-        // Use window.innerWidth/Height and subtract the CSS padding (2 * 100px = 200px)
-        const availableWidth = window.innerWidth - 100; // Assuming 50px left/right padding
-        const availableHeight = window.innerHeight - 200; // Assuming 100px top/bottom padding
-
-        // ... (The rest of your zoom/ratio calculation logic remains the same, 
-        // using availableWidth/Height for the initial fit calculation) ...
+        const availableWidth = window.innerWidth - 100;
+        const availableHeight = window.innerHeight - 200;
 
         if (originalImageWidth > availableWidth || originalImageHeight > availableHeight) {
             const widthRatio = availableWidth / originalImageWidth;
@@ -204,21 +205,17 @@ function openOverlay(index) {
         }
 
         zoom = Math.max(zoom, 0.2);
-
         updateZoom();
-        
         overlayImg.style.opacity = "1";
     };
 }
 
-// Close overlay
 closeBtn.onclick = () => {
     overlay.style.display = "none";
     overlay.setAttribute('aria-hidden', 'true');
     document.body.style.overflow = '';
 };
 
-// Show previous image
 function showPrev() {
     if (currentIndex > 0) {
         currentIndex--;
@@ -228,7 +225,6 @@ function showPrev() {
     }
 }
 
-// Show next image
 function showNext() {
     if (currentIndex < overlayImages.length - 1) {
         currentIndex++;
@@ -241,11 +237,9 @@ function showNext() {
 prevBtn.onclick = showPrev;
 nextBtn.onclick = showNext;
 
-// Track mouse position for zoom functionality
 overlayImg.addEventListener("mouseenter", () => { isOverImage = true; });
 overlayImg.addEventListener("mouseleave", () => { isOverImage = false; });
 
-// Zoom with mouse wheel
 overlay.addEventListener("wheel", (e) => {
     if (isOverImage) {
         e.preventDefault();
@@ -257,7 +251,6 @@ overlay.addEventListener("wheel", (e) => {
     }
 }, { passive: false });
 
-// Keyboard controls for overlay
 document.addEventListener("keydown", (e) => {
     if (overlay.style.display !== "block") return;
     
@@ -280,7 +273,6 @@ document.addEventListener("keydown", (e) => {
     }
 });
 
-// Reset zoom on double-click
 overlayImg.addEventListener("dblclick", () => {
     zoom = 1.5;
     updateZoom();
@@ -289,19 +281,15 @@ overlayImg.addEventListener("dblclick", () => {
 // ============================================================
 // 📤 IMAGE UPLOAD PROCESSING
 // ============================================================
-// Process images uploaded directly from user's device
 async function processFiles(files) {
-    // Prevent multiple simultaneous processing
     if (isProcessing) {
         alert("⏳ Already processing! Please wait...");
         return;
     }
     
-    // Set processing state
     isProcessing = true;
     processBtn.disabled = true;
     
-    // Reset UI
     resultContainer.innerHTML = "";
     overlayImages = [];
     loadingBarContainer.style.display = "block";
@@ -311,24 +299,22 @@ async function processFiles(files) {
     
     updateStatus("🚀 Initializing translator...", 'info');
 
-    // Process each file sequentially
     for (let i = 0; i < files.length; i++) {
         const form = new FormData();
         form.append("file", files[i]);
 
         try {
-            // Step 1: Uploading
             updateStatus(`📤 Uploading image ${i + 1}/${files.length}...`, 'info');
             
-            // Step 2: Connecting to API
-            updateStatus(`🔗 Connecting to translation service...`, 'info');
+            // Make sure we're calling the correct endpoint
+            const endpoint = `${API_BASE_URL}/process`;
+            console.log('📡 Calling endpoint:', endpoint);
             
-            const res = await fetchWithRetry(`${API_BASE_URL}/process`, {
+            const res = await fetchWithRetry(endpoint, {
                 method: "POST",
                 body: form
             });
 
-            // Step 3: Check response
             if (!res.ok) {
                 let errorMsg = `Server error: ${res.status}`;
                 try {
@@ -342,29 +328,20 @@ async function processFiles(files) {
                 
                 if (res.status === 503) {
                     updateStatus("⏳ Service is starting, please wait 30s and try again.", 'warning');
+                } else if (res.status === 405) {
+                    updateStatus("❌ 405 Method Not Allowed - Check API configuration", 'error');
+                    console.error('The endpoint does not accept POST requests. Verify your backend is running correctly.');
                 }
                 continue;
             }
 
-            // Step 4: Processing response
             updateStatus(`⚙️ Processing image ${i + 1}/${files.length}...`, 'info');
-            
-            // Step 5: Detecting text boxes
-            updateStatus(`🔍 Detecting text boxes in image...`, 'info');
-            
-            // Step 6: OCR in progress
-            updateStatus(`📝 Reading Japanese text...`, 'info');
-            
-            // Step 7: Translation
-            updateStatus(`🌐 Translating to English...`, 'info');
             
             const data = await res.json();
 
-            // Step 8: Rendering result
             if (data.result_image) {
                 updateStatus(`🎨 Rendering translated image ${i + 1}/${files.length}...`, 'info');
                 
-                // Create result card
                 const div = document.createElement("div");
                 div.className = "resultBox";
                 div.style.opacity = "0";
@@ -380,21 +357,18 @@ async function processFiles(files) {
                 div.appendChild(img);
                 resultContainer.appendChild(div);
 
-                // Animate result card
                 setTimeout(() => {
                     div.style.transition = "all 0.3s ease";
                     div.style.opacity = "1";
                     div.style.transform = "scale(1)";
                 }, 10);
 
-                // Add to overlay viewer
                 overlayImages.push(img);
                 div.onclick = () => openOverlay(overlayImages.indexOf(img));
                 
                 updateStatus(`✅ Image ${i + 1}/${files.length} completed!`, 'success');
             }
 
-            // Update progress bar
             const percent = Math.round(((i + 1) / files.length) * 100);
             loadingBar.style.width = percent + "%";
             loadingBar.innerText = percent + "%";
@@ -405,13 +379,11 @@ async function processFiles(files) {
         }
     }
 
-    // All done!
     updateStatus(`✅ All done! Successfully translated ${files.length} image(s).`, 'success');
     isProcessing = false;
     processBtn.disabled = false;
 }
 
-// Attach click handler to process button
 processBtn.onclick = () => {
     const files = fileInput.files;
     if (!files.length) return alert("📁 Please select at least one file.");
@@ -421,9 +393,7 @@ processBtn.onclick = () => {
 // ============================================================
 // 🔗 NHENTAI URL PROCESSING WITH STREAMING
 // ============================================================
-// Process manga pages from nhentai gallery URL with real-time updates
 processNhentaiBtn.onclick = async () => {
-    // Prevent multiple simultaneous processing
     if (isProcessing) {
         alert("⏳ Already processing! Please wait...");
         return;
@@ -434,11 +404,9 @@ processNhentaiBtn.onclick = async () => {
     
     if (!url) return alert("🔗 Please enter a nhentai URL.");
     
-    // Set processing state
     isProcessing = true;
     processNhentaiBtn.disabled = true;
     
-    // Reset UI
     resultContainer.innerHTML = "";
     overlayImages = [];
     loadingBarContainer.style.display = "block";
@@ -447,22 +415,23 @@ processNhentaiBtn.onclick = async () => {
     loadingBar.innerText = "0%";
     
     try {
-        // Step 1: Parse URL
         updateStatus("🔍 Parsing nhentai URL...", 'info');
         
         const formData = new FormData();
         formData.append("url", url);
         formData.append("page_numbers", pageNumbers);
         
-        // Step 2: Fetch gallery info
         updateStatus("🌐 Connecting to nhentai...", 'info');
         
-        const response = await fetchWithRetry(`${API_BASE_URL}/process_nhentai_stream`, {
+        // Make sure we're calling the correct endpoint
+        const endpoint = `${API_BASE_URL}/process_nhentai_stream`;
+        console.log('📡 Calling endpoint:', endpoint);
+        
+        const response = await fetchWithRetry(endpoint, {
             method: "POST",
             body: formData
         });
         
-        // Check response
         if (!response.ok) {
             let errorMsg = `Error: ${response.status}`;
             try {
@@ -476,6 +445,9 @@ processNhentaiBtn.onclick = async () => {
             
             if (response.status === 503) {
                 updateStatus("⏳ Service is starting, please wait 30s and try again.", 'warning');
+            } else if (response.status === 405) {
+                updateStatus("❌ 405 Method Not Allowed - Check API configuration", 'error');
+                console.error('The endpoint does not accept POST requests. Verify your backend is running correctly.');
             }
             
             loadingBarContainer.style.display = "none";
@@ -484,7 +456,6 @@ processNhentaiBtn.onclick = async () => {
         
         updateStatus("✅ Successfully connected to nhentai!", 'success');
         
-        // Step 3: Stream processing results
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -505,17 +476,14 @@ processNhentaiBtn.onclick = async () => {
                 try {
                     const data = JSON.parse(line);
                     
-                    // Handle different message types
                     if (data.type === "info") {
                         galleryTitle = data.title;
                         totalToProcess = data.pages_to_process;
                         updateStatus(`📚 Found gallery: "${galleryTitle}" (${totalToProcess} pages to translate)`, 'success');
                         
                     } else if (data.type === "result") {
-                        // Page successfully translated
-                        updateStatus(`📖 Page ${data.page}: Downloading from nhentai...`, 'info');
+                        updateStatus(`📖 Page ${data.page}: Translating...`, 'info');
                         
-                        // Create result card
                         const div = document.createElement("div");
                         div.className = "resultBox";
                         div.style.opacity = "0";
@@ -531,7 +499,6 @@ processNhentaiBtn.onclick = async () => {
                         div.appendChild(img);
                         resultContainer.appendChild(div);
                         
-                        // Animate result card
                         setTimeout(() => {
                             div.style.transition = "all 0.3s ease";
                             div.style.opacity = "1";
@@ -541,7 +508,6 @@ processNhentaiBtn.onclick = async () => {
                         overlayImages.push(img);
                         div.onclick = () => openOverlay(overlayImages.indexOf(img));
                         
-                        // Update progress
                         const percent = Math.round((data.progress / totalToProcess) * 100);
                         loadingBar.style.width = percent + "%";
                         loadingBar.innerText = `${data.progress}/${totalToProcess}`;
@@ -575,19 +541,25 @@ processNhentaiBtn.onclick = async () => {
 // ============================================================
 // 🏥 HEALTH CHECK ON PAGE LOAD
 // ============================================================
-// Check if the translation service is ready when page loads
 window.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Manga Translator Frontend Loaded');
     console.log('📡 API Endpoint:', API_BASE_URL);
     
+    // Warn if configuration looks wrong
+    if (API_BASE_URL.includes('github.io')) {
+        console.error('❌ CRITICAL: API_BASE_URL is pointing to GitHub Pages!');
+        console.error('This will NOT work. GitHub Pages cannot run Python backends.');
+        updateStatus("❌ Configuration Error: API endpoint must point to a backend server (HuggingFace/Railway/Render)", 'error');
+        return;
+    }
+    
     updateStatus("🔍 Checking service status...", 'info');
     
     try {
-        // Test connection with timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
         
-        const testResponse = await fetch(`${API_BASE_URL}/`, {
+        const testResponse = await fetch(`${API_BASE_URL}/health`, {
             method: 'GET',
             signal: controller.signal
         });
@@ -595,14 +567,19 @@ window.addEventListener('DOMContentLoaded', async () => {
         clearTimeout(timeoutId);
         
         if (testResponse.ok) {
-            updateStatus("✅ Service is ready! Upload manga images to start translating.", 'success');
-            console.log('✅ HuggingFace Space is online and ready');
+            const data = await testResponse.json();
+            if (data.models_loaded) {
+                updateStatus("✅ Service is ready! Upload manga images to start translating.", 'success');
+                console.log('✅ Backend is online and models are loaded');
+            } else {
+                updateStatus("⏳ Models are loading... Please wait a moment.", 'warning');
+                console.log('⚠️ Backend is online but models are still loading');
+            }
         } else if (testResponse.status === 404) {
-            // 404 is actually OK - means the Space is running but /health endpoint doesn't exist
             updateStatus("✅ Service is ready! Upload manga images to start translating.", 'success');
-            console.log('✅ HuggingFace Space is online (404 on / is normal)');
+            console.log('✅ Backend is online (404 on /health is acceptable)');
         } else {
-            updateStatus("⚠️ Service is starting up. Please wait...", 'warning');
+            updateStatus("⚠️ Service returned unexpected status. Try uploading an image to test.", 'warning');
             console.warn('⚠️ Unexpected status:', testResponse.status);
         }
     } catch (error) {
@@ -610,10 +587,3 @@ window.addEventListener('DOMContentLoaded', async () => {
         updateStatus("⏳ Service may be sleeping. First request may take 60 seconds to wake up.", 'warning');
     }
 });
-
-
-
-
-
-
-
