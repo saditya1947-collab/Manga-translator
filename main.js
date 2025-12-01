@@ -2,7 +2,7 @@
 // 🔧 API CONFIGURATION
 // ============================================================
 // This is your HuggingFace Space URL where the translation API runs
-const API_BASE_URL = 'MY_API_KEY';
+const API_BASE_URL = 'https://adityat4000u-manga-translator.hf.space';
 
 // Retry settings for handling Space wake-up and network issues
 const MAX_RETRIES = 3;           // Try up to 3 times if request fails
@@ -610,6 +610,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         updateStatus("⏳ Service may be sleeping. First request may take 60 seconds to wake up.", 'warning');
     }
 });
+
 
 
 
